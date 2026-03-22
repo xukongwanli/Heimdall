@@ -182,5 +182,55 @@ class PostgresPipeline:
 
 
 class MetricsRefreshPipeline:
+    def open_spider(self, spider):
+        db_url = 'postgresql://localhost/heimdall'
+        if hasattr(spider, 'settings') and hasattr(spider.settings, 'get'):
+            db_url = spider.settings.get('DATABASE_URL', db_url)
+        self.engine = create_engine(db_url)
+
     def process_item(self, item, spider):
         return item
+
+    def close_spider(self, spider):
+        """Refresh zip_metrics when spider finishes."""
+        session = sessionmaker(bind=self.engine)()
+        try:
+            session.execute(text("""
+                INSERT INTO zip_metrics (postal_code, country, region, lat, lng,
+                    avg_buy_price_per_sqft, avg_rent_per_sqft, rent_to_price_ratio,
+                    listing_count, updated_at)
+                SELECT
+                    l.postal_code,
+                    l.country,
+                    l.region,
+                    AVG(ST_Y(l.coordinates::geometry)) AS lat,
+                    AVG(ST_X(l.coordinates::geometry)) AS lng,
+                    AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) AS avg_buy,
+                    AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) AS avg_rent,
+                    CASE
+                        WHEN AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) > 0
+                         AND AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) IS NOT NULL
+                        THEN (AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) * 12)
+                           / AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END)
+                    END AS ratio,
+                    COUNT(*),
+                    NOW()
+                FROM listings l
+                GROUP BY l.postal_code, l.country, l.region
+                ON CONFLICT (postal_code) DO UPDATE SET
+                    country = EXCLUDED.country,
+                    region = EXCLUDED.region,
+                    lat = EXCLUDED.lat,
+                    lng = EXCLUDED.lng,
+                    avg_buy_price_per_sqft = EXCLUDED.avg_buy_price_per_sqft,
+                    avg_rent_per_sqft = EXCLUDED.avg_rent_per_sqft,
+                    rent_to_price_ratio = EXCLUDED.rent_to_price_ratio,
+                    listing_count = EXCLUDED.listing_count,
+                    updated_at = EXCLUDED.updated_at
+            """))
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            raise
+        finally:
+            session.close()

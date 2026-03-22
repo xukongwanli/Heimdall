@@ -128,11 +128,17 @@ from sqlalchemy.orm import sessionmaker
 
 # Need to add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from backend.app.models import Base, Listing
-from heimdall_crawler.pipelines import PostgresPipeline
+from backend.app.models import Base, Listing, ZipMetrics
+from heimdall_crawler.pipelines import PostgresPipeline, MetricsRefreshPipeline
 
 
 DB_URL = "postgresql://localhost/heimdall"
+
+
+def setup_module():
+    """Ensure DB tables exist before running pipeline tests."""
+    engine = create_engine(DB_URL)
+    Base.metadata.create_all(engine)
 
 
 def test_postgres_pipeline_inserts_listing():
@@ -196,3 +202,45 @@ def test_postgres_pipeline_upserts_newer():
     session.commit()
     session.close()
     pipeline.close_spider(FakeSpider())
+
+
+def test_metrics_refresh_computes_ratios():
+    """Insert test listings, run refresh, check zip_metrics."""
+    engine = create_engine(DB_URL)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    zip_code = f"test-{uuid.uuid4().hex[:4]}"
+    now = datetime.now(timezone.utc)
+
+    # Insert a buy listing
+    session.execute(text("""
+        INSERT INTO listings (id, source, listing_type, address, city, country, region, postal_code, price, sqft, price_per_sqft, source_url, published_at, crawled_at)
+        VALUES (gen_random_uuid(), 'zillow', 'buy', :addr_buy, 'testcity', 'US', 'TX', :zip, 120000, 1000, 120, 'http://test', :now, :now)
+    """), {"addr_buy": f"buy-{zip_code}", "zip": zip_code, "now": now})
+
+    # Insert a rent listing
+    session.execute(text("""
+        INSERT INTO listings (id, source, listing_type, address, city, country, region, postal_code, price, sqft, price_per_sqft, source_url, published_at, crawled_at)
+        VALUES (gen_random_uuid(), 'zillow', 'rent', :addr_rent, 'testcity', 'US', 'TX', :zip, 1200, 1000, 1.2, 'http://test', :now, :now)
+    """), {"addr_rent": f"rent-{zip_code}", "zip": zip_code, "now": now})
+    session.commit()
+
+    # Run metrics refresh
+    pipeline = MetricsRefreshPipeline()
+    pipeline.engine = engine
+    pipeline.close_spider(FakeSpider())
+
+    # Check results
+    result = session.query(ZipMetrics).filter_by(postal_code=zip_code).first()
+    assert result is not None
+    assert float(result.avg_buy_price_per_sqft) == 120.0
+    assert float(result.avg_rent_per_sqft) == 1.2
+    # rent_to_price_ratio = (1.2 * 12) / 120 = 0.12
+    assert abs(float(result.rent_to_price_ratio) - 0.12) < 0.001
+
+    # Cleanup
+    session.execute(text("DELETE FROM zip_metrics WHERE postal_code = :zip"), {"zip": zip_code})
+    session.execute(text("DELETE FROM listings WHERE postal_code = :zip"), {"zip": zip_code})
+    session.commit()
+    session.close()
