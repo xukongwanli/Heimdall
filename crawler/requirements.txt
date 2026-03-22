@@ -1,4 +1,5 @@
 scrapy==2.12.0
+scrapy-playwright==0.0.43
 geopy==2.4.1
 psycopg2-binary==2.9.10
 sqlalchemy==2.0.41
