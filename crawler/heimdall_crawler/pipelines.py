@@ -1,6 +1,8 @@
 import re
 from datetime import datetime, timezone
 
+from geopy.geocoders import Nominatim
+
 
 ADDRESS_ABBREVIATIONS = {
     r'\bst\b': 'street',
@@ -81,7 +83,30 @@ class CleaningPipeline:
 
 
 class GeocodingPipeline:
+    def __init__(self):
+        self.geocoder = Nominatim(user_agent="heimdall-crawler")
+        self._cache = {}
+
     def process_item(self, item, spider):
+        address_key = f"{item.get('address')}, {item.get('city')}, {item.get('region')} {item.get('postal_code')}"
+
+        if address_key in self._cache:
+            item["latitude"], item["longitude"] = self._cache[address_key]
+            return item
+
+        try:
+            location = self.geocoder.geocode(address_key)
+            if location:
+                item["latitude"] = location.latitude
+                item["longitude"] = location.longitude
+            else:
+                item["latitude"] = None
+                item["longitude"] = None
+        except Exception:
+            item["latitude"] = None
+            item["longitude"] = None
+
+        self._cache[address_key] = (item.get("latitude"), item.get("longitude"))
         return item
 
 

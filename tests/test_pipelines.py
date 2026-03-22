@@ -87,3 +87,33 @@ def test_cleaning_published_at_fallback():
     item = make_item(published_at=None)
     result = pipeline.process_item(item, FakeSpider())
     assert result["published_at"] is not None  # should be set to now
+
+
+from unittest.mock import MagicMock
+from heimdall_crawler.pipelines import GeocodingPipeline
+
+
+def test_geocoding_sets_coordinates():
+    pipeline = GeocodingPipeline()
+    pipeline.geocoder = MagicMock()
+    pipeline.geocoder.geocode.return_value = MagicMock(latitude=30.2672, longitude=-97.7431)
+
+    item = make_item()
+    item["address"] = "123 main street"
+    item["city"] = "austin"
+    item["region"] = "TX"
+    item["postal_code"] = "78701"
+    result = pipeline.process_item(item, FakeSpider())
+    assert result["latitude"] == 30.2672
+    assert result["longitude"] == -97.7431
+
+
+def test_geocoding_handles_failure():
+    pipeline = GeocodingPipeline()
+    pipeline.geocoder = MagicMock()
+    pipeline.geocoder.geocode.return_value = None
+
+    item = make_item()
+    result = pipeline.process_item(item, FakeSpider())
+    assert result["latitude"] is None
+    assert result["longitude"] is None
