@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'crawler'))
 
 from heimdall_crawler.items import ListingItem
@@ -8,6 +9,7 @@ from heimdall_crawler.pipelines import CleaningPipeline
 
 class FakeSpider:
     name = "test"
+    logger = logging.getLogger("test_spider")
 
 
 def make_item(**kwargs):
@@ -117,3 +119,80 @@ def test_geocoding_handles_failure():
     result = pipeline.process_item(item, FakeSpider())
     assert result["latitude"] is None
     assert result["longitude"] is None
+
+
+import uuid
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+
+# Need to add backend to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from backend.app.models import Base, Listing
+from heimdall_crawler.pipelines import PostgresPipeline
+
+
+DB_URL = "postgresql://localhost/heimdall"
+
+
+def test_postgres_pipeline_inserts_listing():
+    pipeline = PostgresPipeline()
+    pipeline.open_spider(FakeSpider())
+
+    item = make_item(price=450000, sqft=1800)
+    item["price_per_sqft"] = 250.0
+    item["latitude"] = 30.2672
+    item["longitude"] = -97.7431
+    item["crawled_at"] = datetime.now(timezone.utc)
+    item["published_at"] = datetime.now(timezone.utc)
+    item["address"] = f"test-{uuid.uuid4().hex[:8]}"  # unique address
+
+    pipeline.process_item(item, FakeSpider())
+
+    engine = create_engine(DB_URL)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    result = session.query(Listing).filter_by(address=item["address"]).first()
+    assert result is not None
+    assert result.price == 450000
+    session.delete(result)
+    session.commit()
+    session.close()
+    pipeline.close_spider(FakeSpider())
+
+
+def test_postgres_pipeline_upserts_newer():
+    pipeline = PostgresPipeline()
+    pipeline.open_spider(FakeSpider())
+
+    addr = f"upsert-test-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(timezone.utc)
+
+    item1 = make_item(price=400000, sqft=1600)
+    item1["price_per_sqft"] = 250.0
+    item1["latitude"] = 30.0
+    item1["longitude"] = -97.0
+    item1["crawled_at"] = now
+    item1["published_at"] = now - timedelta(days=1)
+    item1["address"] = addr
+
+    item2 = make_item(price=420000, sqft=1600)
+    item2["price_per_sqft"] = 262.5
+    item2["latitude"] = 30.0
+    item2["longitude"] = -97.0
+    item2["crawled_at"] = now
+    item2["published_at"] = now  # newer
+    item2["address"] = addr
+
+    pipeline.process_item(item1, FakeSpider())
+    pipeline.process_item(item2, FakeSpider())
+
+    engine = create_engine(DB_URL)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    result = session.query(Listing).filter_by(address=addr).first()
+    assert result.price == 420000  # newer listing's price
+    session.delete(result)
+    session.commit()
+    session.close()
+    pipeline.close_spider(FakeSpider())

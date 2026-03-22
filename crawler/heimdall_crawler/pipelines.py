@@ -2,6 +2,10 @@ import re
 from datetime import datetime, timezone
 
 from geopy.geocoders import Nominatim
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from geoalchemy2.shape import from_shape
+from shapely.geometry import Point
 
 
 ADDRESS_ABBREVIATIONS = {
@@ -111,7 +115,69 @@ class GeocodingPipeline:
 
 
 class PostgresPipeline:
+    def open_spider(self, spider):
+        db_url = 'postgresql://localhost/heimdall'
+        if hasattr(spider, 'settings') and hasattr(spider.settings, 'get'):
+            db_url = spider.settings.get('DATABASE_URL', db_url)
+        self.engine = create_engine(db_url)
+        self.Session = sessionmaker(bind=self.engine)
+
+    def close_spider(self, spider):
+        self.engine.dispose()
+
     def process_item(self, item, spider):
+        session = self.Session()
+        try:
+            coords = None
+            if item.get("latitude") and item.get("longitude"):
+                coords = from_shape(Point(item["longitude"], item["latitude"]), srid=4326)
+
+            session.execute(
+                text("""
+                    INSERT INTO listings (
+                        id, source, listing_type, address, city, country,
+                        region, postal_code, price, sqft, price_per_sqft,
+                        coordinates, source_url, published_at, crawled_at
+                    ) VALUES (
+                        gen_random_uuid(), :source, :listing_type, :address, :city, :country,
+                        :region, :postal_code, :price, :sqft, :price_per_sqft,
+                        :coordinates, :source_url, :published_at, :crawled_at
+                    )
+                    ON CONFLICT (source, address, listing_type)
+                    DO UPDATE SET
+                        price = EXCLUDED.price,
+                        sqft = EXCLUDED.sqft,
+                        price_per_sqft = EXCLUDED.price_per_sqft,
+                        coordinates = EXCLUDED.coordinates,
+                        source_url = EXCLUDED.source_url,
+                        published_at = EXCLUDED.published_at,
+                        crawled_at = EXCLUDED.crawled_at
+                    WHERE EXCLUDED.published_at > listings.published_at
+                """),
+                {
+                    "source": item["source"],
+                    "listing_type": item["listing_type"],
+                    "address": item["address"],
+                    "city": item.get("city", ""),
+                    "country": item.get("country", "US"),
+                    "region": item.get("region", ""),
+                    "postal_code": item.get("postal_code", ""),
+                    "price": item["price"],
+                    "sqft": item.get("sqft"),
+                    "price_per_sqft": item.get("price_per_sqft"),
+                    "coordinates": str(coords) if coords else None,
+                    "source_url": item["source_url"],
+                    "published_at": item["published_at"],
+                    "crawled_at": item.get("crawled_at"),
+                },
+            )
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            spider.logger.error(f"Failed to upsert listing: {e}")
+            raise
+        finally:
+            session.close()
         return item
 
 
