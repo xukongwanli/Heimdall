@@ -16,6 +16,14 @@ CONCURRENT_REQUESTS = 1
 RETRY_HTTP_CODES = [403, 429, 500, 502, 503]
 RETRY_TIMES = 3
 
+# Playwright — JS rendering for React-based listing sites
+DOWNLOAD_HANDLERS = {
+    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+}
+PLAYWRIGHT_BROWSER_TYPE = "chromium"
+PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
+
 # Pipelines — order matters
 ITEM_PIPELINES = {
     "heimdall_crawler.pipelines.CleaningPipeline": 100,
@@ -30,7 +38,7 @@ DOWNLOADER_MIDDLEWARES = {
 }
 
 # Database
-DATABASE_URL = "postgresql://localhost/heimdall"
+DATABASE_URL = "postgresql://heimdall:heimdall@localhost:5433/heimdall"
 
 # Logging
 LOG_LEVEL = "INFO"

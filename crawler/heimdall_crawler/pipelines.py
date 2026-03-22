@@ -116,7 +116,7 @@ class GeocodingPipeline:
 
 class PostgresPipeline:
     def open_spider(self, spider):
-        db_url = 'postgresql://localhost/heimdall'
+        db_url = 'postgresql://heimdall:heimdall@localhost:5433/heimdall'
         if hasattr(spider, 'settings') and hasattr(spider.settings, 'get'):
             db_url = spider.settings.get('DATABASE_URL', db_url)
         self.engine = create_engine(db_url)
@@ -183,7 +183,7 @@ class PostgresPipeline:
 
 class MetricsRefreshPipeline:
     def open_spider(self, spider):
-        db_url = 'postgresql://localhost/heimdall'
+        db_url = 'postgresql://heimdall:heimdall@localhost:5433/heimdall'
         if hasattr(spider, 'settings') and hasattr(spider.settings, 'get'):
             db_url = spider.settings.get('DATABASE_URL', db_url)
         self.engine = create_engine(db_url)
