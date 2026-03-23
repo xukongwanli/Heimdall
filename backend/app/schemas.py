@@ -29,6 +29,8 @@ class MetricPoint(BaseModel):
     lat: float | None
     lng: float | None
     value: float | None
+    region: str
+    listing_count: int
 
 
 class SearchResult(BaseModel):

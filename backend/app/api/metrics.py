@@ -26,6 +26,8 @@ def get_metrics(
         ZipMetrics.lat,
         ZipMetrics.lng,
         col.label("value"),
+        ZipMetrics.region,
+        ZipMetrics.listing_count,
     )
 
     if region:
@@ -40,6 +42,8 @@ def get_metrics(
             lat=float(r.lat) if r.lat else None,
             lng=float(r.lng) if r.lng else None,
             value=float(r.value) if r.value else None,
+            region=r.region,
+            listing_count=r.listing_count,
         )
         for r in rows
     ]
