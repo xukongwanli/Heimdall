@@ -22,3 +22,7 @@ logs
 .env
 .env.*
 !.env.example
+
+# Large GeoJSON files - downloaded via scripts/fetch-geo.sh
+public/geo/us-states.json
+public/geo/us-counties.json
