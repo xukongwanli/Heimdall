@@ -288,7 +288,7 @@ class EnrichmentPipeline:
                 item["postal_code"] = zip_row["postal_code"]
 
     def _enrich_from_state(self, item):
-        """Step 3: lookup by state to fill lat/lng."""
+        """Step 4: lookup by state to fill lat/lng."""
         row = self._lookup("state", item["region"].upper())
         if not row:
             return
