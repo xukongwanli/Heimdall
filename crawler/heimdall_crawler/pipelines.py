@@ -412,44 +412,130 @@ class MetricsRefreshPipeline:
         return item
 
     def close_spider(self, spider):
-        """Refresh zip_metrics when spider finishes."""
+        """Refresh region_metrics at all levels when spider finishes."""
         session = sessionmaker(bind=self.engine)()
         try:
-            session.execute(text("""
-                INSERT INTO zip_metrics (postal_code, country, region, lat, lng,
+            # Shared SQL for metric computation
+            metric_cols = """
+                AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL
+                    THEN l.price_per_sqft END) AS avg_buy,
+                AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL
+                    THEN l.price_per_sqft END) AS avg_rent,
+                CASE
+                    WHEN AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL
+                        THEN l.price_per_sqft END) > 0
+                     AND AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL
+                        THEN l.price_per_sqft END) IS NOT NULL
+                    THEN (AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL
+                        THEN l.price_per_sqft END) * 12)
+                       / AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL
+                        THEN l.price_per_sqft END)
+                END AS ratio,
+                COUNT(*) AS cnt
+            """
+
+            # State level
+            session.execute(text(f"""
+                INSERT INTO region_metrics (level, code, name, country, region, lat, lng,
                     avg_buy_price_per_sqft, avg_rent_per_sqft, rent_to_price_ratio,
                     listing_count, updated_at)
                 SELECT
-                    l.postal_code,
-                    l.country,
-                    l.region,
-                    AVG(ST_Y(l.coordinates::geometry)) AS lat,
-                    AVG(ST_X(l.coordinates::geometry)) AS lng,
-                    AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) AS avg_buy,
-                    AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) AS avg_rent,
-                    CASE
-                        WHEN AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) > 0
-                         AND AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) IS NOT NULL
-                        THEN (AVG(CASE WHEN l.listing_type = 'rent' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END) * 12)
-                           / AVG(CASE WHEN l.listing_type = 'buy' AND l.price_per_sqft IS NOT NULL THEN l.price_per_sqft END)
-                    END AS ratio,
-                    COUNT(*),
+                    'state', l.region,
+                    COALESCE(g.name, l.region),
+                    l.country, l.region,
+                    COALESCE(AVG(ST_Y(l.coordinates::geometry)), g.lat),
+                    COALESCE(AVG(ST_X(l.coordinates::geometry)), g.lng),
+                    {metric_cols},
                     NOW()
                 FROM listings l
-                GROUP BY l.postal_code, l.country, l.region
-                ON CONFLICT (postal_code) DO UPDATE SET
-                    country = EXCLUDED.country,
-                    region = EXCLUDED.region,
-                    lat = EXCLUDED.lat,
-                    lng = EXCLUDED.lng,
+                LEFT JOIN geo_reference g ON g.level = 'state' AND g.code = l.region
+                GROUP BY l.region, l.country, g.name, g.lat, g.lng
+                ON CONFLICT (level, code) DO UPDATE SET
+                    name = EXCLUDED.name, lat = EXCLUDED.lat, lng = EXCLUDED.lng,
                     avg_buy_price_per_sqft = EXCLUDED.avg_buy_price_per_sqft,
                     avg_rent_per_sqft = EXCLUDED.avg_rent_per_sqft,
                     rent_to_price_ratio = EXCLUDED.rent_to_price_ratio,
-                    listing_count = EXCLUDED.listing_count,
-                    updated_at = EXCLUDED.updated_at
+                    listing_count = EXCLUDED.listing_count, updated_at = EXCLUDED.updated_at
             """))
+
+            # County level
+            session.execute(text(f"""
+                INSERT INTO region_metrics (level, code, name, country, region, lat, lng,
+                    avg_buy_price_per_sqft, avg_rent_per_sqft, rent_to_price_ratio,
+                    listing_count, updated_at)
+                SELECT
+                    'county', l.county_fips,
+                    COALESCE(g.name, l.county_fips),
+                    l.country, l.region,
+                    COALESCE(AVG(ST_Y(l.coordinates::geometry)), g.lat),
+                    COALESCE(AVG(ST_X(l.coordinates::geometry)), g.lng),
+                    {metric_cols},
+                    NOW()
+                FROM listings l
+                LEFT JOIN geo_reference g ON g.level = 'county' AND g.code = l.county_fips
+                WHERE l.county_fips IS NOT NULL AND l.county_fips != ''
+                GROUP BY l.county_fips, l.country, l.region, g.name, g.lat, g.lng
+                ON CONFLICT (level, code) DO UPDATE SET
+                    name = EXCLUDED.name, lat = EXCLUDED.lat, lng = EXCLUDED.lng,
+                    avg_buy_price_per_sqft = EXCLUDED.avg_buy_price_per_sqft,
+                    avg_rent_per_sqft = EXCLUDED.avg_rent_per_sqft,
+                    rent_to_price_ratio = EXCLUDED.rent_to_price_ratio,
+                    listing_count = EXCLUDED.listing_count, updated_at = EXCLUDED.updated_at
+            """))
+
+            # City level
+            session.execute(text(f"""
+                INSERT INTO region_metrics (level, code, name, country, region, lat, lng,
+                    avg_buy_price_per_sqft, avg_rent_per_sqft, rent_to_price_ratio,
+                    listing_count, updated_at)
+                SELECT
+                    'city', LOWER(l.city) || '-' || LOWER(l.region),
+                    COALESCE(g.name, l.city || ', ' || l.region),
+                    l.country, l.region,
+                    COALESCE(AVG(ST_Y(l.coordinates::geometry)), g.lat),
+                    COALESCE(AVG(ST_X(l.coordinates::geometry)), g.lng),
+                    {metric_cols},
+                    NOW()
+                FROM listings l
+                LEFT JOIN geo_reference g ON g.level = 'city'
+                    AND g.code = LOWER(l.city) || '-' || LOWER(l.region)
+                WHERE l.city IS NOT NULL AND l.city != ''
+                GROUP BY l.city, l.region, l.country, g.name, g.lat, g.lng
+                ON CONFLICT (level, code) DO UPDATE SET
+                    name = EXCLUDED.name, lat = EXCLUDED.lat, lng = EXCLUDED.lng,
+                    avg_buy_price_per_sqft = EXCLUDED.avg_buy_price_per_sqft,
+                    avg_rent_per_sqft = EXCLUDED.avg_rent_per_sqft,
+                    rent_to_price_ratio = EXCLUDED.rent_to_price_ratio,
+                    listing_count = EXCLUDED.listing_count, updated_at = EXCLUDED.updated_at
+            """))
+
+            # ZIP level
+            session.execute(text(f"""
+                INSERT INTO region_metrics (level, code, name, country, region, lat, lng,
+                    avg_buy_price_per_sqft, avg_rent_per_sqft, rent_to_price_ratio,
+                    listing_count, updated_at)
+                SELECT
+                    'zip', l.postal_code,
+                    COALESCE(g.name, l.postal_code),
+                    l.country, l.region,
+                    COALESCE(AVG(ST_Y(l.coordinates::geometry)), g.lat),
+                    COALESCE(AVG(ST_X(l.coordinates::geometry)), g.lng),
+                    {metric_cols},
+                    NOW()
+                FROM listings l
+                LEFT JOIN geo_reference g ON g.level = 'zip' AND g.code = l.postal_code
+                WHERE l.postal_code IS NOT NULL AND l.postal_code != ''
+                GROUP BY l.postal_code, l.country, l.region, g.name, g.lat, g.lng
+                ON CONFLICT (level, code) DO UPDATE SET
+                    name = EXCLUDED.name, lat = EXCLUDED.lat, lng = EXCLUDED.lng,
+                    avg_buy_price_per_sqft = EXCLUDED.avg_buy_price_per_sqft,
+                    avg_rent_per_sqft = EXCLUDED.avg_rent_per_sqft,
+                    rent_to_price_ratio = EXCLUDED.rent_to_price_ratio,
+                    listing_count = EXCLUDED.listing_count, updated_at = EXCLUDED.updated_at
+            """))
+
             session.commit()
-        except Exception as e:
+        except Exception:
             session.rollback()
             raise
         finally:
