@@ -50,14 +50,14 @@ def upgrade() -> None:
         sa.Column('level', sa.String(length=10), nullable=False),
         sa.Column('code', sa.Text(), nullable=False),
         sa.Column('name', sa.Text(), nullable=False),
-        sa.Column('country', sa.String(length=2), nullable=False),
+        sa.Column('country', sa.String(length=2), nullable=False, server_default='US'),
         sa.Column('region', sa.Text(), nullable=False),
         sa.Column('lat', sa.Numeric(), nullable=True),
         sa.Column('lng', sa.Numeric(), nullable=True),
         sa.Column('avg_buy_price_per_sqft', sa.Numeric(), nullable=True),
         sa.Column('avg_rent_per_sqft', sa.Numeric(), nullable=True),
         sa.Column('rent_to_price_ratio', sa.Numeric(), nullable=True),
-        sa.Column('listing_count', sa.Integer(), nullable=False),
+        sa.Column('listing_count', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint('level', 'code'),
     )
@@ -94,7 +94,7 @@ def downgrade() -> None:
     op.drop_column('listings', 'county_fips')
 
     # Drop new tables
-    op.drop_index('ix_geo_ref_geog', table_name='geo_reference', postgresql_using='gist')
+    op.drop_index('ix_geo_ref_geog', table_name='geo_reference')
     op.drop_index('ix_geo_ref_level_city_state', table_name='geo_reference')
     op.drop_index('ix_geo_ref_level_state', table_name='geo_reference')
     op.drop_table('geo_reference')
