@@ -114,6 +114,8 @@ This downloads US Census gazetteer files (~5 MB) and loads ~69K geographic refer
 # Venv: crawler/.venv (needs requests + sqlalchemy)
 source crawler/.venv/bin/activate
 pip install requests
+
+# From: project root (heimdall/)
 python scripts/populate_geo_reference.py
 ```
 

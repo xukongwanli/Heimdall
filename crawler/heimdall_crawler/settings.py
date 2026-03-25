@@ -5,16 +5,16 @@ NEWSPIDER_MODULE = "heimdall_crawler.spiders"
 # Anti-bot
 ROBOTSTXT_OBEY = False
 AUTOTHROTTLE_ENABLED = True
-AUTOTHROTTLE_START_DELAY = 2
-AUTOTHROTTLE_MAX_DELAY = 10
+AUTOTHROTTLE_START_DELAY = 5
+AUTOTHROTTLE_MAX_DELAY = 30
 AUTOTHROTTLE_TARGET_CONCURRENCY = 1.0
-DOWNLOAD_DELAY = 2
+DOWNLOAD_DELAY = 5
 RANDOMIZE_DOWNLOAD_DELAY = True
 CONCURRENT_REQUESTS = 1
 
-# Retry on anti-bot responses
-RETRY_HTTP_CODES = [403, 429, 500, 502, 503]
-RETRY_TIMES = 3
+# Retry on anti-bot responses (429 handled separately by BackoffRetryMiddleware)
+RETRY_HTTP_CODES = [403, 500, 502, 503]
+RETRY_TIMES = 5
 
 # Playwright — JS rendering for React-based listing sites
 DOWNLOAD_HANDLERS = {
@@ -36,6 +36,8 @@ ITEM_PIPELINES = {
 # Downloader middleware
 DOWNLOADER_MIDDLEWARES = {
     "heimdall_crawler.middlewares.RotateUserAgentMiddleware": 400,
+    "heimdall_crawler.middlewares.BackoffRetryMiddleware": 550,
+    "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,  # replaced by BackoffRetryMiddleware
 }
 
 # Database
