@@ -18,3 +18,5 @@ class ListingItem(scrapy.Item):
     crawled_at = scrapy.Field()      # set by CleaningPipeline
     latitude = scrapy.Field()        # set by GeocodingPipeline
     longitude = scrapy.Field()       # set by GeocodingPipeline
+    county_fips = scrapy.Field()     # set by EnrichmentPipeline
+    county_name = scrapy.Field()     # set by EnrichmentPipeline
