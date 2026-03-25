@@ -1,12 +1,11 @@
 <script setup lang="ts">
-const { currentMetric, metrics, loading: metricsLoading, metricLabel, switchMetric, fetchMetrics } = useMetrics()
+const { currentMetric, metrics, loading: metricsLoading, metricLabel, switchMetric, switchLevel, fetchMetrics } = useMetrics()
 const { results, loading: searchLoading, search } = useSearch()
 
 const mapBounds = ref({ min: 0, max: 0 })
 
-// Fetch initial metrics on mount
 onMounted(() => {
-  fetchMetrics('rent_to_price_ratio')
+  fetchMetrics('rent_to_price_ratio', 'state')
 })
 
 function onMetricChange(metric: string) {
@@ -15,6 +14,10 @@ function onMetricChange(metric: string) {
 
 function onBoundsChange(bounds: { min: number; max: number }) {
   mapBounds.value = bounds
+}
+
+function onLevelChange(level: 'state' | 'county') {
+  switchLevel(level)
 }
 </script>
 
@@ -44,6 +47,7 @@ function onBoundsChange(bounds: { min: number; max: number }) {
             :metrics="metrics"
             :metric-label="metricLabel"
             @bounds-change="onBoundsChange"
+            @level-change="onLevelChange"
           />
         </ClientOnly>
         <MapLegend

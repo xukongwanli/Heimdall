@@ -27,6 +27,7 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
 # Pipelines — order matters
 ITEM_PIPELINES = {
     "heimdall_crawler.pipelines.CleaningPipeline": 100,
+    "heimdall_crawler.pipelines.EnrichmentPipeline": 150,
     "heimdall_crawler.pipelines.GeocodingPipeline": 200,
     "heimdall_crawler.pipelines.PostgresPipeline": 300,
     "heimdall_crawler.pipelines.MetricsRefreshPipeline": 400,

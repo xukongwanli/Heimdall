@@ -25,7 +25,9 @@ class ListingOut(BaseModel):
 
 
 class MetricPoint(BaseModel):
-    postal_code: str
+    level: str
+    code: str
+    name: str
     lat: float | None
     lng: float | None
     value: float | None
