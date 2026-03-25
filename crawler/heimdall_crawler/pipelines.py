@@ -302,6 +302,10 @@ class GeocodingPipeline:
         self._cache = {}
 
     def process_item(self, item, spider):
+        # Skip if enrichment already provided coordinates
+        if item.get("latitude") and item.get("longitude"):
+            return item
+
         address_key = f"{item.get('address')}, {item.get('city')}, {item.get('region')} {item.get('postal_code')}"
 
         if address_key in self._cache:
@@ -347,11 +351,13 @@ class PostgresPipeline:
                     INSERT INTO listings (
                         id, source, listing_type, address, city, country,
                         region, postal_code, price, sqft, price_per_sqft,
-                        coordinates, source_url, published_at, crawled_at
+                        coordinates, source_url, published_at, crawled_at,
+                        county_fips, county_name
                     ) VALUES (
                         gen_random_uuid(), :source, :listing_type, :address, :city, :country,
                         :region, :postal_code, :price, :sqft, :price_per_sqft,
-                        :coordinates, :source_url, :published_at, :crawled_at
+                        :coordinates, :source_url, :published_at, :crawled_at,
+                        :county_fips, :county_name
                     )
                     ON CONFLICT (source, address, listing_type)
                     DO UPDATE SET
@@ -361,7 +367,9 @@ class PostgresPipeline:
                         coordinates = EXCLUDED.coordinates,
                         source_url = EXCLUDED.source_url,
                         published_at = EXCLUDED.published_at,
-                        crawled_at = EXCLUDED.crawled_at
+                        crawled_at = EXCLUDED.crawled_at,
+                        county_fips = EXCLUDED.county_fips,
+                        county_name = EXCLUDED.county_name
                     WHERE EXCLUDED.published_at > listings.published_at
                 """),
                 {
@@ -379,6 +387,8 @@ class PostgresPipeline:
                     "source_url": item["source_url"],
                     "published_at": item["published_at"],
                     "crawled_at": item.get("crawled_at"),
+                    "county_fips": item.get("county_fips"),
+                    "county_name": item.get("county_name"),
                 },
             )
             session.commit()
