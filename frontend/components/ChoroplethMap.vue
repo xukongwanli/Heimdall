@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import L from 'leaflet'
 import { valueToColor, computeBounds } from '~/utils/colorScale'
-import { aggregateByState, aggregateByCounty, type AggregatedMetric, type MetricPoint } from '~/utils/aggregate'
+import { aggregateByCode, type AggregatedMetric, type MetricPoint } from '~/utils/aggregate'
 
 const props = defineProps<{
   metrics: MetricPoint[]
@@ -10,6 +10,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   boundsChange: [bounds: { min: number; max: number }]
+  levelChange: [level: 'state' | 'county']
 }>()
 
 const { convert, unitLabel } = useUnits()
@@ -20,23 +21,20 @@ let stateLayer: L.GeoJSON | null = null
 let countyLayer: L.GeoJSON | null = null
 let statesGeoJson: any = null
 let countiesGeoJson: any = null
-let zipToCounty: Record<string, string> = {}
+let currentZoomLevel: 'state' | 'county' = 'state'
 
 const ZOOM_THRESHOLD = 7
 const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
 const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
 
-// Load GeoJSON assets
 async function loadGeoData() {
   try {
-    const [states, counties, zipCounty] = await Promise.all([
+    const [states, counties] = await Promise.all([
       fetch('/geo/us-states.json').then(r => r.json()).catch(() => null),
       fetch('/geo/us-counties.json').then(r => r.json()).catch(() => null),
-      fetch('/geo/zip-to-county.json').then(r => r.json()).catch(() => ({})),
     ])
     statesGeoJson = states
     countiesGeoJson = counties
-    zipToCounty = zipCounty
   } catch (e) {
     console.error('Failed to load GeoJSON:', e)
   }
@@ -53,7 +51,7 @@ function createPopupContent(name: string, data: AggregatedMetric | undefined): s
   }
   return `
     <div class="map-popup">
-      <div class="popup-title">${name}</div>
+      <div class="popup-title">${data.name || name}</div>
       <div class="popup-body">
         Value: <span class="popup-value">${data.value.toFixed(4)}</span><br>
         Listings: <span>${data.totalListings.toLocaleString()}</span>
@@ -99,7 +97,7 @@ function addInteraction(layer: L.Layer, feature: any, aggregated: Map<string, Ag
 function renderStateLayer() {
   if (!map || !statesGeoJson) return
 
-  const aggregated = aggregateByState(props.metrics)
+  const aggregated = aggregateByCode(props.metrics)
   const values = Array.from(aggregated.values()).map(a => a.value)
   const bounds = computeBounds(values)
   emit('boundsChange', bounds)
@@ -117,7 +115,7 @@ function renderStateLayer() {
 function renderCountyLayer() {
   if (!map || !countiesGeoJson) return
 
-  const aggregated = aggregateByCounty(props.metrics, zipToCounty)
+  const aggregated = aggregateByCode(props.metrics)
   const values = Array.from(aggregated.values()).map(a => a.value)
   const bounds = computeBounds(values)
   emit('boundsChange', bounds)
@@ -135,6 +133,13 @@ function renderCountyLayer() {
 function updateLayers() {
   if (!map) return
   const zoom = map.getZoom()
+  const newLevel = zoom < ZOOM_THRESHOLD ? 'state' : 'county'
+
+  if (newLevel !== currentZoomLevel) {
+    currentZoomLevel = newLevel
+    emit('levelChange', newLevel)
+    return // Parent will fetch new data, which triggers the metrics watcher
+  }
 
   if (zoom < ZOOM_THRESHOLD) {
     if (countyLayer) {
@@ -157,7 +162,7 @@ onMounted(async () => {
   await loadGeoData()
 
   map = L.map(mapContainer.value, {
-    center: [39.8, -98.5], // Center of US
+    center: [39.8, -98.5],
     zoom: 4,
     zoomControl: false,
     attributionControl: false,
@@ -173,9 +178,16 @@ onMounted(async () => {
   updateLayers()
 })
 
-// Re-render when metrics change
 watch(() => props.metrics, () => {
-  updateLayers()
+  if (!map) return
+  const zoom = map.getZoom()
+  if (zoom < ZOOM_THRESHOLD) {
+    if (countyLayer) { map.removeLayer(countyLayer); countyLayer = null }
+    renderStateLayer()
+  } else {
+    if (stateLayer) { map.removeLayer(stateLayer); stateLayer = null }
+    renderCountyLayer()
+  }
 }, { deep: true })
 
 onUnmounted(() => {
