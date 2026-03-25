@@ -11,6 +11,7 @@ set -euo pipefail
 
 GEO_DIR="$(dirname "$0")/../public/geo"
 mkdir -p "$GEO_DIR"
+GEO_DIR="$(cd "$GEO_DIR" && pwd)"
 
 echo "Downloading US states (20m shapefile)..."
 TMPDIR=$(mktemp -d)

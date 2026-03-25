@@ -33,13 +33,24 @@ Scrapy Spiders  -->  Pipelines  -->  PostgreSQL + PostGIS  <--  FastAPI  <--  Nu
 - **Docker Desktop** — for PostgreSQL + PostGIS
 - **Python 3.12+**
 - **Node.js 18+** and npm
-- **Playwright browsers** — for JS-rendered sites (`playwright install chromium`)
+- **Playwright browsers** — installed during crawler setup
 
 ## Local Setup
+
+All paths below are relative to the project root (`heimdall/`).
+
+The project has **three separate environments**:
+
+| Component | Directory | Environment | Purpose |
+|-----------|-----------|-------------|---------|
+| Backend   | `backend/` | Python venv (`backend/.venv`) | FastAPI API server, DB migrations |
+| Crawler   | `crawler/` | Python venv (`crawler/.venv`) | Scrapy spiders, data pipelines |
+| Frontend  | `frontend/` | Node.js (`frontend/node_modules`) | Nuxt dev server |
 
 ### 1. Start the database
 
 ```bash
+# From: project root (heimdall/)
 docker compose up -d
 ```
 
@@ -51,27 +62,33 @@ This starts PostgreSQL 17 + PostGIS 3.5 on port **5433** with:
 Verify it's running:
 
 ```bash
+# From: anywhere
 PGPASSWORD=heimdall psql -h localhost -p 5433 -U heimdall -d heimdall -c "SELECT 1"
 ```
 
 ### 2. Set up the backend
 
 ```bash
+# From: project root (heimdall/)
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Run database migrations:
+Run database migrations (must be inside `backend/` with its venv active):
 
 ```bash
+# From: backend/
+# Venv: backend/.venv
 alembic upgrade head
 ```
 
 Start the API server:
 
 ```bash
+# From: backend/
+# Venv: backend/.venv
 uvicorn backend.app.main:app --reload --port 8000
 ```
 
@@ -80,6 +97,7 @@ The API is now at `http://localhost:8000`. Docs at `http://localhost:8000/docs`.
 ### 3. Set up the crawler
 
 ```bash
+# From: project root (heimdall/)
 cd crawler
 python3 -m venv .venv
 source .venv/bin/activate
@@ -92,7 +110,10 @@ playwright install chromium
 This downloads US Census gazetteer files (~5 MB) and loads ~69K geographic reference rows (states, counties, cities, ZIP codes) into the `geo_reference` table. The EnrichmentPipeline uses this data to fill missing fields on crawled listings.
 
 ```bash
-pip install requests  # if not already installed
+# From: project root (heimdall/)
+# Venv: crawler/.venv (needs requests + sqlalchemy)
+source crawler/.venv/bin/activate
+pip install requests
 python scripts/populate_geo_reference.py
 ```
 
@@ -110,6 +131,7 @@ Done. Total rows upserted: ~69000
 ### 5. Set up the frontend
 
 ```bash
+# From: project root (heimdall/)
 cd frontend
 npm install
 ```
@@ -117,12 +139,14 @@ npm install
 Download GeoJSON boundary files for the choropleth map:
 
 ```bash
+# From: frontend/
 bash scripts/fetch-geo.sh
 ```
 
 Start the dev server:
 
 ```bash
+# From: frontend/
 npm run dev
 ```
 
@@ -130,9 +154,8 @@ The frontend is now at `http://localhost:3000`.
 
 ### 6. Crawl some data
 
-Run the Numbeo spider (the only working public source currently):
-
 ```bash
+# From: project root (heimdall/)
 cd crawler
 source .venv/bin/activate
 scrapy crawl numbeo
@@ -141,6 +164,8 @@ scrapy crawl numbeo
 Or run all spiders:
 
 ```bash
+# From: crawler/
+# Venv: crawler/.venv
 python run_all.py
 ```
 
@@ -148,8 +173,11 @@ After crawling, `region_metrics` is automatically refreshed. The choropleth map 
 
 ## Running Tests
 
+Tests require PostgreSQL running and migrations applied.
+
 ```bash
-# From project root, using the crawler venv (has all deps)
+# From: project root (heimdall/)
+# Venv: crawler/.venv (has all Python deps needed for tests)
 source crawler/.venv/bin/activate
 pip install pytest
 
@@ -162,41 +190,64 @@ python -m pytest tests/test_region_metrics.py -v   # MetricsRefreshPipeline test
 python -m pytest tests/test_pipelines.py -v        # Cleaning, geocoding, pipeline tests
 ```
 
-Tests that interact with the database require PostgreSQL to be running and migrations applied.
+## Day-to-Day Usage
+
+Once setup is complete, here's what you need to run each time:
+
+```bash
+# Terminal 1 — Database (if not already running)
+# From: project root (heimdall/)
+docker compose up -d
+
+# Terminal 2 — Backend API
+# From: backend/
+source .venv/bin/activate
+uvicorn backend.app.main:app --reload --port 8000
+
+# Terminal 3 — Frontend
+# From: frontend/
+npm run dev
+
+# Terminal 4 — Crawl data (as needed)
+# From: crawler/
+source .venv/bin/activate
+scrapy crawl numbeo
+```
 
 ## Project Structure
 
 ```
 heimdall/
-  backend/
+  backend/                 # Python venv: backend/.venv
     app/
-      api/            # FastAPI route handlers (listings, metrics, search)
-      database.py     # SQLAlchemy engine and session
-      main.py         # FastAPI app entry point
-      models.py       # ORM models (Listing, GeoReference, RegionMetrics)
-      schemas.py      # Pydantic response models
-    alembic/          # Database migrations
+      api/                 # FastAPI route handlers (listings, metrics, search)
+      database.py          # SQLAlchemy engine and session
+      main.py              # FastAPI app entry point
+      models.py            # ORM models (Listing, GeoReference, RegionMetrics)
+      schemas.py           # Pydantic response models
+    alembic/               # Database migrations (run from backend/)
     requirements.txt
-  crawler/
+  crawler/                 # Python venv: crawler/.venv
     heimdall_crawler/
-      spiders/        # Scrapy spiders (numbeo, zillow, realtor, redfin)
-      items.py        # ListingItem definition
-      middlewares.py   # User-agent rotation
-      pipelines.py    # Cleaning, Enrichment, Geocoding, Postgres, MetricsRefresh
-      settings.py     # Scrapy configuration
-    run_all.py        # Run all spiders
+      spiders/             # Scrapy spiders (numbeo, zillow, realtor, redfin)
+      items.py             # ListingItem definition
+      middlewares.py       # User-agent rotation
+      pipelines.py         # Cleaning, Enrichment, Geocoding, Postgres, MetricsRefresh
+      settings.py          # Scrapy configuration
+    run_all.py             # Run all spiders
     requirements.txt
-  frontend/
-    components/       # Vue components (ChoroplethMap, SearchBar, ResultsTable, etc.)
-    composables/      # Vue composables (useMetrics, useSearch, useUnits)
-    pages/            # Nuxt pages (index.vue)
-    server/api/       # Server proxy routes to FastAPI
-    utils/            # Color scale, metric aggregation
-    public/geo/       # GeoJSON boundary files (gitignored, fetched by script)
+  frontend/                # Node.js: frontend/node_modules
+    components/            # Vue components (ChoroplethMap, SearchBar, ResultsTable, etc.)
+    composables/           # Vue composables (useMetrics, useSearch, useUnits)
+    pages/                 # Nuxt pages (index.vue)
+    server/api/            # Server proxy routes to FastAPI
+    utils/                 # Color scale, metric aggregation
+    public/geo/            # GeoJSON boundary files (gitignored, fetched by script)
+    scripts/fetch-geo.sh   # Download GeoJSON boundary files
     nuxt.config.ts
     package.json
   scripts/
-    populate_geo_reference.py  # Load Census gazetteer data
-  tests/              # pytest test suite
-  docker-compose.yml  # PostgreSQL + PostGIS
+    populate_geo_reference.py  # Load Census gazetteer data (run with crawler venv)
+  tests/                   # pytest test suite (run with crawler venv from project root)
+  docker-compose.yml       # PostgreSQL + PostGIS
 ```
