@@ -213,7 +213,18 @@ npm run dev
 # Terminal 4 — Crawl data (as needed)
 # From: crawler/
 source .venv/bin/activate
-scrapy crawl numbeo
+
+# Run all spiders (Numbeo + Realtor + Redfin for a given region)
+python run_all.py           # defaults to TX
+python run_all.py TX CA FL  # specify regions
+
+# Or run individual spiders
+scrapy crawl numbeo                                      # aggregate city-level stats
+scrapy crawl realtor -a region=TX -a listing_type=buy
+scrapy crawl realtor -a region=TX -a listing_type=rent
+scrapy crawl redfin  -a region=TX -a listing_type=buy
+scrapy crawl redfin  -a region=TX -a listing_type=rent
+scrapy crawl zillow  -a region=TX -a listing_type=buy   # implemented, not in run_all.py yet
 ```
 
 ## Project Structure
