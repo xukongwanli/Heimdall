@@ -204,7 +204,7 @@ docker compose up -d
 # Terminal 2 — Backend API
 # From: backend/
 source .venv/bin/activate
-uvicorn backend.app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 
 # Terminal 3 — Frontend
 # From: frontend/
