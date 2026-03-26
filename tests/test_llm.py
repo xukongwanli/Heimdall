@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'crawler'))
 
-from heimdall_crawler.llm import classify_page, generate_selectors
+from heimdall_crawler.llm import classify_page, generate_selectors, suggest_sites
 
 
 FAKE_API_KEY = "test-key-123"
@@ -87,5 +87,41 @@ class TestGenerateSelectors:
 
         with patch("heimdall_crawler.llm.httpx.post", side_effect=Exception("network error")):
             result = generate_selectors("<html>...</html>", api_key=FAKE_API_KEY)
+
+        assert result is None
+
+
+class TestSuggestSites:
+    def test_suggest_sites_returns_urls(self):
+        payload = [
+            "https://zillow.com",
+            "https://realtor.com",
+            "https://har.com",
+        ]
+        mock_resp = _make_response(json.dumps(payload))
+
+        with patch("heimdall_crawler.llm.httpx.post", return_value=mock_resp):
+            result = suggest_sites(["Texas"], api_key=FAKE_API_KEY)
+
+        assert result is not None
+        assert len(result) == 3
+        assert "https://zillow.com" in result
+
+    def test_suggest_sites_filters_non_urls(self):
+        payload = [
+            "https://zillow.com",
+            "not a url",
+            "https://redfin.com",
+        ]
+        mock_resp = _make_response(json.dumps(payload))
+
+        with patch("heimdall_crawler.llm.httpx.post", return_value=mock_resp):
+            result = suggest_sites(["Texas"], api_key=FAKE_API_KEY)
+
+        assert len(result) == 2
+
+    def test_suggest_sites_returns_none_on_failure(self):
+        with patch("heimdall_crawler.llm.httpx.post", side_effect=Exception("error")):
+            result = suggest_sites(["Texas"], api_key=FAKE_API_KEY)
 
         assert result is None

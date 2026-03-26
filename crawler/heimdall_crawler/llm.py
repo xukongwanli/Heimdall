@@ -57,6 +57,45 @@ def classify_page(page_text, api_key, base_url=DEFAULT_BASE_URL, model=DEFAULT_M
         return None
 
 
+def suggest_sites(regions, api_key, base_url=DEFAULT_BASE_URL, model=DEFAULT_MODEL, timeout=DEFAULT_TIMEOUT):
+    """Ask DeepSeek to suggest real estate websites for given regions.
+
+    Returns a list of URLs like ["https://zillow.com", "https://redfin.com", ...] or None on failure.
+    """
+    region_str = ", ".join(regions)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a real estate data expert. Given US states or regions, suggest websites "
+                "that list real estate properties (homes for sale, apartments for rent, land, etc.) "
+                "in those areas. Include both national sites and regional/local sites. "
+                "Respond ONLY with a JSON array of full URLs (including https://). "
+                "Example: [\"https://zillow.com\", \"https://realtor.com\", \"https://har.com\"]"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"List real estate websites with property listings for: {region_str}. "
+                "Include national aggregators AND smaller regional sites specific to those areas. "
+                "Return at least 15 URLs if possible."
+            ),
+        },
+    ]
+    content = _call_llm(messages, api_key, base_url, model, timeout)
+    if content is None:
+        return None
+    try:
+        result = json.loads(content)
+        if isinstance(result, list):
+            return [url for url in result if isinstance(url, str) and url.startswith("http")]
+        return None
+    except json.JSONDecodeError:
+        logger.warning("LLM returned non-JSON site suggestions: %s", content[:200])
+        return None
+
+
 def generate_selectors(page_html, api_key, base_url=DEFAULT_BASE_URL, model=DEFAULT_MODEL, timeout=DEFAULT_TIMEOUT):
     """Ask DeepSeek to generate CSS selectors for extracting listing fields.
     Returns dict like {"price": "span.price", "address": "h2.address"} or None on failure.
