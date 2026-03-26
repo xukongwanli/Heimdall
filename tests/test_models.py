@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.models import Base, Listing
+from backend.app.models import Base, Listing, DiscoveredSite, ExtractionSelector
 
 
 DB_URL = "postgresql://localhost/heimdall"
@@ -104,3 +104,26 @@ def test_listing_nullable_sqft():
     finally:
         session.rollback()
         session.close()
+
+
+def test_discovered_site_has_required_columns():
+    """DiscoveredSite model must have all expected columns."""
+    columns = DiscoveredSite.__table__.columns
+    expected = [
+        "id", "root_url", "domain", "discovery_query", "llm_classification",
+        "max_crawl_rate", "extraction_method", "status",
+        "last_probed_at", "last_extracted_at", "created_at",
+    ]
+    for col_name in expected:
+        assert col_name in columns, f"Missing column: {col_name}"
+
+
+def test_extraction_selector_has_required_columns():
+    """ExtractionSelector model must have all expected columns."""
+    columns = ExtractionSelector.__table__.columns
+    expected = [
+        "id", "site_id", "page_pattern", "selectors",
+        "structured_data_type", "created_at", "validated_at",
+    ]
+    for col_name in expected:
+        assert col_name in columns, f"Missing column: {col_name}"

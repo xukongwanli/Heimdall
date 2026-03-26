@@ -2,9 +2,10 @@ import uuid
 
 from geoalchemy2 import Geography, Geometry
 from sqlalchemy import (
-    Column, DateTime, Index, Numeric, String, Text, UniqueConstraint, Integer
+    Column, DateTime, ForeignKey, Index, Numeric, String, Text,
+    UniqueConstraint, Integer,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from backend.app.database import Base
 
@@ -84,3 +85,40 @@ class RegionMetrics(Base):
     rent_to_price_ratio = Column(Numeric, nullable=True)
     listing_count = Column(Integer, nullable=False, server_default="0")
     updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class DiscoveredSite(Base):
+    __tablename__ = "discovered_sites"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    root_url = Column(Text, nullable=False, unique=True)
+    domain = Column(Text, nullable=False)
+    discovery_query = Column(Text, nullable=True)
+    llm_classification = Column(JSONB, nullable=True)
+    max_crawl_rate = Column(Numeric, nullable=True)
+    extraction_method = Column(String(20), nullable=True)  # 'structured' or 'llm'
+    status = Column(String(20), nullable=False, server_default="approved")
+    last_probed_at = Column(DateTime(timezone=True), nullable=True)
+    last_extracted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("ix_discovered_sites_domain", "domain"),
+        Index("ix_discovered_sites_status", "status"),
+    )
+
+
+class ExtractionSelector(Base):
+    __tablename__ = "extraction_selectors"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    site_id = Column(UUID(as_uuid=True), ForeignKey("discovered_sites.id", ondelete="CASCADE"), nullable=False)
+    page_pattern = Column(Text, nullable=False)
+    selectors = Column(JSONB, nullable=True)
+    structured_data_type = Column(String(20), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    validated_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_extraction_selectors_site_id", "site_id"),
+    )
