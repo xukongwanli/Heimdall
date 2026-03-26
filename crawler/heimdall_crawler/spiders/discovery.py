@@ -103,31 +103,43 @@ class DiscoverySpider(scrapy.Spider):
             yield scrapy.Request(
                 search_url,
                 callback=self.parse_search_results,
-                meta={"query": query},
+                meta={
+                    "query": query,
+                    "playwright": True,
+                    "playwright_include_page": False,
+                },
                 errback=self.handle_error,
             )
 
     def parse_search_results(self, response):
-        """Extract links from Google search results and check candidates."""
-        links = response.css("a::attr(href)").getall()
-        for link in links:
-            # Google wraps links in redirects; extract actual URL
-            if link.startswith("/url?q="):
-                link = link.split("/url?q=")[1].split("&")[0]
+        """Extract links from Google search results rendered via Playwright."""
+        # Playwright-rendered Google uses direct links in search result anchors.
+        # Try multiple selectors to handle different Google result layouts.
+        links = set()
 
+        # Standard organic result links
+        for a in response.css("div#search a[href]"):
+            href = a.attrib.get("href", "")
+            links.add(href)
+
+        # Fallback: all links on page
+        for href in response.css("a::attr(href)").getall():
+            # Google redirect wrapper (non-Playwright fallback)
+            if href.startswith("/url?q="):
+                href = href.split("/url?q=")[1].split("&")[0]
+            links.add(href)
+
+        for link in links:
             parsed = urlparse(link)
             if not parsed.scheme or not parsed.netloc:
                 continue
 
             domain = parsed.netloc.lower()
-            # Strip www. prefix for comparison
             bare_domain = domain.removeprefix("www.")
 
-            # Skip known domains
             if domain in self._known_domains or bare_domain in self._known_domains:
                 continue
 
-            # Skip non-listing sites
             if any(skip in bare_domain for skip in SKIP_DOMAINS):
                 continue
 
