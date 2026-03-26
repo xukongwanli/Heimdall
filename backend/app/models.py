@@ -120,5 +120,6 @@ class ExtractionSelector(Base):
     validated_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        UniqueConstraint("site_id", "page_pattern", name="uq_selector_site_pattern"),
         Index("ix_extraction_selectors_site_id", "site_id"),
     )
