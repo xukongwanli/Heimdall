@@ -54,5 +54,5 @@ FEED_EXPORT_ENCODING = "utf-8"
 # LLM — DeepSeek for page classification and selector generation
 LLM_API_KEY = ""  # Set your DeepSeek API key here
 LLM_BASE_URL = "https://api.deepseek.com/v1"
-LLM_MODEL = "deepseek-v3.2"
+LLM_MODEL = "deepseek-chat"
 LLM_TIMEOUT = 30  # seconds
