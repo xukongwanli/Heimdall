@@ -6,3 +6,4 @@ sqlalchemy==2.0.41
 geoalchemy2==0.17.1
 shapely==2.1.0
 requests==2.32.3
+httpx==0.28.1
